@@ -93,7 +93,7 @@ def save_to_memory(key: str, value: str) -> str:
             content=f"[Saved memory] {key}: {value}",
             tool_name="save_to_memory",
         )
-        return f"Saved to memory — {key}: {value}"
+        return f"Saved to memory :  {key}: {value}"
     except Exception as e:
         return f"Memory save failed: {e}"
 
@@ -134,3 +134,4 @@ TOOL_REGISTRY = [
 
 def get_tools() -> list:
     return TOOL_REGISTRY
+

@@ -21,7 +21,7 @@ User Message
 ┌──────────────────────────────────────────────┐
 │               Orchestrator                    │
 │   Classifies intent → retrieve / analyze /   │
-│   respond — avoids RAG on simple queries      │
+│   respond :  avoids RAG on simple queries      │
 └──────────┬─────────────────┬─────────────────┘
            │                 │
    ┌───────▼──────┐  ┌───────▼──────┐
@@ -44,7 +44,7 @@ User Message
               Final Response
 ```
 
-**Memory layer — runs on every turn:**
+**Memory layer :  runs on every turn:**
 ```
 PostgreSQL 16
 ├── conversation_memory   full message history per session
@@ -57,15 +57,15 @@ PostgreSQL 16
 
 ## Technical Highlights
 
-**Intent-based routing** — The orchestrator classifies each query before routing, skipping RAG retrieval entirely for conversational messages. Three intents: `retrieve` (knowledge lookup), `analyze` (multi-source synthesis), `respond` (direct answer). This avoids unnecessary API calls and latency on simple turns.
+**Intent-based routing** :  The orchestrator classifies each query before routing, skipping RAG retrieval entirely for conversational messages. Three intents: `retrieve` (knowledge lookup), `analyze` (multi-source synthesis), `respond` (direct answer). This avoids unnecessary API calls and latency on simple turns.
 
-**Sentence-aware chunking** — Documents are split at sentence boundaries using tiktoken rather than naive byte slicing, so chunks stay semantically coherent. Embeddings use `text-embedding-3-small` (1536 dims) stored in pgvector with an IVFFlat index for sub-linear ANN search.
+**Sentence-aware chunking** :  Documents are split at sentence boundaries using tiktoken rather than naive byte slicing, so chunks stay semantically coherent. Embeddings use `text-embedding-3-small` (1536 dims) stored in pgvector with an IVFFlat index for sub-linear ANN search.
 
-**LLM reranking** — After cosine similarity retrieval (top-5 candidates), a second LLM pass scores each chunk's relevance 0–10 and returns the top-3. Lightweight alternative to a dedicated cross-encoder with no extra infrastructure.
+**LLM reranking** :  After cosine similarity retrieval (top-5 candidates), a second LLM pass scores each chunk's relevance 0-10 and returns the top-3. Lightweight alternative to a dedicated cross-encoder with no extra infrastructure.
 
-**Rolling summarization** — When session history exceeds 20 messages, the LLM summarizes the older portion and stores it in `memory_summaries`. The next turn always sees: [rolling summary system message] + last 10 messages verbatim. Context window stays bounded without losing continuity.
+**Rolling summarization** :  When session history exceeds 20 messages, the LLM summarizes the older portion and stores it in `memory_summaries`. The next turn always sees: [rolling summary system message] + last 10 messages verbatim. Context window stays bounded without losing continuity.
 
-**Tool call depth guard** — The graph tracks `tool_calls_made` per turn and caps at 3. Beyond that, it routes directly to the responder. Prevents runaway tool loops that burn tokens without adding value.
+**Tool call depth guard** :  The graph tracks `tool_calls_made` per turn and caps at 3. Beyond that, it routes directly to the responder. Prevents runaway tool loops that burn tokens without adding value.
 
 ---
 
@@ -103,7 +103,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-API runs at `http://localhost:8000` — Swagger UI at `http://localhost:8000/docs`
+API runs at `http://localhost:8000` :  Swagger UI at `http://localhost:8000/docs`
 
 ---
 
@@ -147,7 +147,7 @@ curl -X DELETE http://localhost:8000/sessions/demo-session
 ```
 multi-agent-llm-system/
 ├── agents/
-│   └── graph.py          # LangGraph StateGraph — orchestrator, retriever, analyzer, responder
+│   └── graph.py          # LangGraph StateGraph :  orchestrator, retriever, analyzer, responder
 ├── rag/
 │   └── pipeline.py       # Chunking, embedding, pgvector retrieval, LLM reranking
 ├── memory/
@@ -156,16 +156,4 @@ multi-agent-llm-system/
 │   └── registry.py       # Tool definitions: search_kb, ingest, memory, summarize
 ├── api/
 │   └── main.py           # FastAPI: /chat, /ingest, /sessions/{id}
-├── db/
-│   └── init.sql          # pgvector schema, IVFFlat index, audit log
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-└── .env.example
-```
-
----
-
-## Stack
-
-`Python 3.11` · `LangGraph 0.2` · `LangChain 0.3` · `OpenAI API` · `pgvector` · `PostgreSQL 16` · `FastAPI` · `Docker Compose` · `tiktoken`
+├�

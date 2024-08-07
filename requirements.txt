@@ -13,3 +13,4 @@ numpy==1.26.4
 python-dotenv==1.0.1
 pytest==8.2.0
 pytest-asyncio==0.23.6
+

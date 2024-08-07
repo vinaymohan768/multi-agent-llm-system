@@ -1,5 +1,5 @@
 """
-Tests for the RAG pipeline — chunking and embedding logic.
+Tests for the RAG pipeline :  chunking and embedding logic.
 No external services needed (DB/OpenAI are mocked).
 """
 
@@ -86,7 +86,7 @@ def test_pipeline_query_returns_reranked_results():
     embed_response.data = [MagicMock(embedding=[0.1] * 1536, index=0)]
     mock_client.embeddings.create.return_value = embed_response
 
-    # Mock rerank LLM call — returns scores for 2 candidates
+    # Mock rerank LLM call :  returns scores for 2 candidates
     rerank_response = MagicMock()
     rerank_response.choices = [MagicMock(message=MagicMock(content="[8, 3]"))]
     mock_client.chat.completions.create.return_value = rerank_response
@@ -121,3 +121,4 @@ def test_pipeline_rerank_falls_back_on_bad_llm_response():
     # Should fall back to similarity order, not raise
     results = pipeline.rerank("query", candidates, top_k=2)
     assert len(results) == 2
+

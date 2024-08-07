@@ -209,3 +209,4 @@ class ConversationMemory:
                 (self.session_id, summary, len(to_summarize)),
             )
         log.info("Memory summarized | session=%s covered=%d messages", self.session_id, len(to_summarize))
+

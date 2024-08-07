@@ -208,7 +208,7 @@ def build_graph():
         {"retriever": "retriever", "analyzer": "analyzer", "responder": "responder"},
     )
 
-    # route_after_agent now only returns "tools" | "responder" — no END in the map
+    # route_after_agent now only returns "tools" | "responder": no END in the map
     graph.add_conditional_edges("retriever", route_after_agent, {"tools": "tools", "responder": "responder"})
     graph.add_conditional_edges("analyzer", route_after_agent, {"tools": "tools", "responder": "responder"})
 
@@ -216,3 +216,4 @@ def build_graph():
     graph.add_edge("responder", END)
 
     return graph.compile()
+

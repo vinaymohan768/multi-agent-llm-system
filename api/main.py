@@ -4,11 +4,11 @@ api/main.py
 FastAPI service for the multi-agent LLM system.
 
 Endpoints:
-  POST   /chat                   — send a message, get an agent response
-  POST   /ingest                 — add a document to the knowledge base
-  GET    /sessions/{id}/history  — fetch conversation history for a session
-  DELETE /sessions/{id}          — clear session memory
-  GET    /health                 — liveness check
+  POST   /chat                  : send a message, get an agent response
+  POST   /ingest                : add a document to the knowledge base
+  GET    /sessions/{id}/history : fetch conversation history for a session
+  DELETE /sessions/{id}         : clear session memory
+  GET    /health                : liveness check
 """
 
 import os
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     openai_client = OpenAI(api_key=api_key)
     rag_pipeline = RAGPipeline(openai_client=openai_client)
 
-    # configure_tools once at startup with shared singletons — not per-request
+    # configure_tools once at startup with shared singletons: not per-request
     configure_tools(
         rag_pipeline=rag_pipeline,
         memory_store=None,   # memory is session-scoped; tools read it via closure
@@ -186,3 +186,4 @@ def clear_session(session_id: str):
     memory = ConversationMemory(session_id=session_id, openai_client=openai_client)
     memory.clear()
     return {"session_id": session_id, "status": "cleared"}
+

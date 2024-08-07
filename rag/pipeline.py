@@ -185,7 +185,7 @@ class RAGPipeline:
         return results
 
     def rerank(self, query: str, candidates: list[dict], top_k: int = RERANK_K) -> list[dict]:
-        """Score each candidate 0–10 for relevance to the query, return top_k."""
+        """Score each candidate 0-10 for relevance to the query, return top_k."""
         if not candidates:
             return []
 
@@ -224,3 +224,4 @@ class RAGPipeline:
         """Full pipeline: retrieve → rerank → return top chunks."""
         candidates = self.retrieve(query, top_k=TOP_K, source_filter=source_filter)
         return self.rerank(query, candidates, top_k=RERANK_K)
+
