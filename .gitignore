@@ -1,4 +1,4 @@
-# Environment — never commit secrets
+# Environment: never commit secrets
 .env
 
 # Python
@@ -6,22 +6,4 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Virtual environments
-.venv/
-venv/
-env/
-
-# Distribution / packaging
-*.egg-info/
-dist/
-build/
-
-# Editor / OS
-.DS_Store
-.idea/
-.vscode/
-*.swp
+.

@@ -1,4 +1,4 @@
--- init.sql — Multi-agent LLM system schema
+-- init.sql: Multi-agent LLM system schema
 
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
