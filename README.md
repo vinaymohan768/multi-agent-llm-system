@@ -1,6 +1,14 @@
-# multi-agent-llm-system
+# Multi-Agent LLM System
 
-Production-grade multi-agent LLM system built with LangGraph, OpenAI, and pgvector. Features an orchestrator-routed agent graph, full RAG pipeline with semantic reranking, and PostgreSQL-backed conversation memory with rolling summarization.
+![CI](https://github.com/vinaymohan768/multi-agent-llm-system/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-0.2-purple)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-API-412991?logo=openai&logoColor=white)
+
+A production-ready multi-agent system built with LangGraph. An orchestrator routes each request to the right specialist agent (retrieval, analysis, or direct response), which can call tools, search a pgvector knowledge base, and maintain context across long conversations via rolling LLM summarization.
 
 ---
 
@@ -10,136 +18,126 @@ Production-grade multi-agent LLM system built with LangGraph, OpenAI, and pgvect
 User Message
      │
      ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Orchestrator Node                     │
-│  Classifies intent: "retrieve" | "analyze" | "respond"  │
-└──────────────┬───────────────────┬──────────────────────┘
-               │                   │
-       ┌───────▼──────┐   ┌────────▼─────┐
-       │   Retriever  │   │   Analyzer   │
-       │    Agent     │   │    Agent     │
-       │              │   │              │
-       │ search_kb    │   │ search_kb    │
-       │ tool call    │   │ + synthesis  │
-       └───────┬──────┘   └────────┬─────┘
-               │                   │
-               └─────────┬─────────┘
-                         │
-                ┌────────▼────────┐
-                │   Tool Node     │  ← executes tool calls
-                │                 │
-                │ search_kb       │
-                │ ingest_doc      │
-                │ recall_memory   │
-                │ save_to_memory  │
-                │ summarize_text  │
-                └────────┬────────┘
-                         │
-                ┌────────▼────────┐
-                │    Responder    │  ← final synthesis
-                └────────┬────────┘
-                         │
-                   Final Response
+┌──────────────────────────────────────────────┐
+│               Orchestrator                    │
+│   Classifies intent → retrieve / analyze /   │
+│   respond — avoids RAG on simple queries      │
+└──────────┬─────────────────┬─────────────────┘
+           │                 │
+   ┌───────▼──────┐  ┌───────▼──────┐
+   │   Retriever  │  │   Analyzer   │
+   │  knowledge   │  │  synthesis + │
+   │  base search │  │  multi-source│
+   └───────┬──────┘  └───────┬──────┘
+           └────────┬─────────┘
+                    │
+           ┌────────▼────────┐
+           │   Tool Node     │   search_knowledge_base
+           │  (LangGraph     │   ingest_document
+           │   prebuilt)     │   recall_memory
+           └────────┬────────┘   save_to_memory
+                    │            summarize_text
+           ┌────────▼────────┐
+           │    Responder    │  ← synthesizes final answer
+           └────────┬────────┘
+                    │
+              Final Response
 ```
 
-**Memory layer** (runs alongside every turn):
+**Memory layer — runs on every turn:**
 ```
-PostgreSQL
-├── conversation_memory   — full message history per session
-├── memory_summaries      — LLM-generated rolling summaries (bounds context window)
-├── document_chunks       — RAG corpus (pgvector embeddings)
-└── agent_runs            — audit log of every node execution
+PostgreSQL 16
+├── conversation_memory   full message history per session
+├── memory_summaries      LLM-generated rolling summaries (keeps context bounded)
+├── document_chunks       RAG corpus with pgvector IVFFlat embeddings
+└── agent_runs            audit log for every node execution
 ```
 
 ---
 
-## Key Design Decisions
+## Technical Highlights
 
-**LangGraph StateGraph** — The agent graph is a typed, inspectable state machine. Every node receives the full state and returns a partial update. This makes the flow deterministic and debuggable — you can replay any state without re-running the whole graph.
+**Intent-based routing** — The orchestrator classifies each query before routing, skipping RAG retrieval entirely for conversational messages. Three intents: `retrieve` (knowledge lookup), `analyze` (multi-source synthesis), `respond` (direct answer). This avoids unnecessary API calls and latency on simple turns.
 
-**Intent-based routing** — The orchestrator classifies the user's query before routing. This avoids running expensive RAG retrieval on conversational queries that don't need it. Three intents: `retrieve` (knowledge lookup), `analyze` (multi-source synthesis), `respond` (direct answer).
+**Sentence-aware chunking** — Documents are split at sentence boundaries using tiktoken rather than naive byte slicing, so chunks stay semantically coherent. Embeddings use `text-embedding-3-small` (1536 dims) stored in pgvector with an IVFFlat index for sub-linear ANN search.
 
-**Sentence-aware chunking + LLM reranking** — Documents are chunked at sentence boundaries using tiktoken to respect token limits, then embeddings are stored with an IVFFlat index for sub-linear ANN search. Retrieved candidates are reranked by the LLM using relevance scoring before being passed as context.
+**LLM reranking** — After cosine similarity retrieval (top-5 candidates), a second LLM pass scores each chunk's relevance 0–10 and returns the top-3. Lightweight alternative to a dedicated cross-encoder with no extra infrastructure.
 
-**Rolling memory summarization** — When conversation history exceeds 20 messages, older messages are summarized by the LLM and stored as a single system message. The most recent 10 messages are always kept verbatim. This keeps context windows bounded without losing semantic continuity.
+**Rolling summarization** — When session history exceeds 20 messages, the LLM summarizes the older portion and stores it in `memory_summaries`. The next turn always sees: [rolling summary system message] + last 10 messages verbatim. Context window stays bounded without losing continuity.
 
-**Tool call depth guard** — The graph tracks `tool_calls_made` per turn and caps recursion at 3 to prevent runaway tool loops. Beyond that, it routes straight to the responder.
+**Tool call depth guard** — The graph tracks `tool_calls_made` per turn and caps at 3. Beyond that, it routes directly to the responder. Prevents runaway tool loops that burn tokens without adding value.
 
 ---
 
 ## RAG Pipeline
 
 ```
-Document text
-     │
-     ▼
-Sentence-aware chunking (512 tokens, 64 token overlap)
-     │
-     ▼
-OpenAI text-embedding-3-small → 1536-dim vectors
-     │
-     ▼
-pgvector IVFFlat index (cosine similarity)
-     │
-     ▼ query time
-Cosine ANN search → top-5 candidates
-     │
-     ▼
-LLM relevance reranking → top-3 chunks
-     │
-     ▼
-Context passed to agent
+Input text
+    │
+    ▼  sentence-aware chunking (512 tokens, 64-token overlap)
+    │
+    ▼  OpenAI text-embedding-3-small → 1536-dim vectors
+    │
+    ▼  stored in pgvector with IVFFlat index (cosine)
+    │
+    ▼  at query time: ANN search → top-5 candidates
+    │
+    ▼  LLM relevance scoring → top-3 reranked chunks
+    │
+    ▼  context injected into agent state
 ```
 
 ---
 
 ## Getting Started
 
-**Prerequisites:** Docker, Docker Compose, OpenAI API key
+**Requirements:** Docker, Docker Compose, OpenAI API key
 
 ```bash
 git clone https://github.com/vinaymohan768/multi-agent-llm-system
 cd multi-agent-llm-system
 
 cp .env.example .env
-# Add your OPENAI_API_KEY to .env
+# Set OPENAI_API_KEY in .env
 
 docker compose up --build
 ```
 
-API available at `http://localhost:8000`. Swagger UI at `http://localhost:8000/docs`.
+API runs at `http://localhost:8000` — Swagger UI at `http://localhost:8000/docs`
 
 ---
 
-## Usage Examples
+## API Examples
 
-**Send a message:**
+**Chat with the agent:**
 ```bash
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "What is the capital of France?", "session_id": "session-001"}'
+  -d '{"message": "What is LangGraph?", "session_id": "demo-session"}'
 ```
 
-**Ingest a document:**
+**Ingest a document into the knowledge base:**
 ```bash
 curl -X POST http://localhost:8000/ingest \
   -H "Content-Type: application/json" \
-  -d '{
-    "text": "LangGraph is a library for building stateful, multi-actor applications with LLMs...",
-    "source": "langgraph-docs"
-  }'
+  -d '{"text": "LangGraph is a library for building stateful multi-actor LLM applications...", "source": "docs"}'
 ```
 
-**Ask a question about ingested content:**
+**Ask a question that triggers RAG retrieval:**
 ```bash
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "What is LangGraph used for?", "session_id": "session-001"}'
+  -d '{"message": "How does LangGraph handle state?", "session_id": "demo-session"}'
 ```
 
-**View conversation history:**
+**View full conversation history:**
 ```bash
-curl http://localhost:8000/sessions/session-001/history
+curl http://localhost:8000/sessions/demo-session/history
+```
+
+**Clear session memory:**
+```bash
+curl -X DELETE http://localhost:8000/sessions/demo-session
 ```
 
 ---
@@ -149,21 +147,17 @@ curl http://localhost:8000/sessions/session-001/history
 ```
 multi-agent-llm-system/
 ├── agents/
-│   ├── graph.py          # LangGraph StateGraph: orchestrator + specialist nodes
-│   └── __init__.py
+│   └── graph.py          # LangGraph StateGraph — orchestrator, retriever, analyzer, responder
 ├── rag/
-│   ├── pipeline.py       # Chunking, embedding, pgvector retrieval, LLM reranking
-│   └── __init__.py
+│   └── pipeline.py       # Chunking, embedding, pgvector retrieval, LLM reranking
 ├── memory/
-│   ├── store.py          # PostgreSQL-backed memory with rolling summarization
-│   └── __init__.py
+│   └── store.py          # PostgreSQL-backed memory with rolling summarization
 ├── tools/
-│   ├── registry.py       # Tool definitions: search_kb, ingest, memory, summarize
-│   └── __init__.py
+│   └── registry.py       # Tool definitions: search_kb, ingest, memory, summarize
 ├── api/
-│   └── main.py           # FastAPI: /chat, /ingest, /sessions
+│   └── main.py           # FastAPI: /chat, /ingest, /sessions/{id}
 ├── db/
-│   └── init.sql          # pgvector schema, IVFFlat index, audit log table
+│   └── init.sql          # pgvector schema, IVFFlat index, audit log
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
@@ -172,6 +166,6 @@ multi-agent-llm-system/
 
 ---
 
-## Tech Stack
+## Stack
 
-`Python 3.11` `LangGraph 0.2` `LangChain 0.3` `OpenAI API` `pgvector` `PostgreSQL 16` `FastAPI` `Docker Compose`
+`Python 3.11` · `LangGraph 0.2` · `LangChain 0.3` · `OpenAI API` · `pgvector` · `PostgreSQL 16` · `FastAPI` · `Docker Compose` · `tiktoken`
