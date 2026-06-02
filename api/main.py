@@ -4,11 +4,11 @@ api/main.py
 FastAPI service for the multi-agent LLM system.
 
 Endpoints:
-  POST /chat                    — send a message, get an agent response
-  POST /ingest                  — add a document to the knowledge base
-  GET  /sessions/{id}/history   — retrieve conversation history
-  DELETE /sessions/{id}         — clear session memory
-  GET  /health                  — liveness check
+  POST   /chat                   — send a message, get an agent response
+  POST   /ingest                 — add a document to the knowledge base
+  GET    /sessions/{id}/history  — fetch conversation history for a session
+  DELETE /sessions/{id}          — clear session memory
+  GET    /health                 — liveness check
 """
 
 import os
@@ -19,7 +19,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -31,7 +31,7 @@ from tools import configure as configure_tools
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("api")
 
-# ── Singletons ────────────────────────────────────────────────────────────────
+# ── App-level singletons (created once at startup) ────────────────────────────
 
 openai_client: Optional[OpenAI] = None
 agent_graph = None
@@ -48,6 +48,14 @@ async def lifespan(app: FastAPI):
 
     openai_client = OpenAI(api_key=api_key)
     rag_pipeline = RAGPipeline(openai_client=openai_client)
+
+    # configure_tools once at startup with shared singletons — not per-request
+    configure_tools(
+        rag_pipeline=rag_pipeline,
+        memory_store=None,   # memory is session-scoped; tools read it via closure
+        openai_client=openai_client,
+    )
+
     agent_graph = build_graph()
 
     log.info("Agent graph compiled. RAG pipeline ready.")
@@ -106,26 +114,22 @@ def health():
 def chat(req: ChatRequest):
     session_id = req.session_id or str(uuid.uuid4())
 
-    # Build session memory and configure tools with this session's context
-    memory = ConversationMemory(
-        session_id=session_id,
-        openai_client=openai_client,
-    )
-    configure_tools(
-        rag_pipeline=rag_pipeline,
-        memory_store=memory,
-        openai_client=openai_client,
-    )
-
-    # Persist the user message
+    memory = ConversationMemory(session_id=session_id, openai_client=openai_client)
     memory.add("user", req.message)
 
-    # Build context from memory (summary + recent messages)
-    context_messages = memory.get_context()
+    # Pull rolling summary + recent messages and inject them as the first
+    # messages in the graph state so the agent has full conversational context.
+    context = memory.get_context()
+    prior_messages = []
+    for m in context:
+        if m["role"] == "system":
+            prior_messages.append(SystemMessage(content=m["content"]))
+        elif m["role"] == "user":
+            prior_messages.append(HumanMessage(content=m["content"]))
+        # skip assistant messages from prior turns to keep the state clean
 
-    # Construct the initial graph state
     initial_state = {
-        "messages": [HumanMessage(content=req.message)],
+        "messages": [*prior_messages, HumanMessage(content=req.message)],
         "session_id": session_id,
         "intent": None,
         "retrieved_context": [],
@@ -140,8 +144,6 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Agent error: {e}")
 
     final = result.get("final_response") or "I was unable to generate a response."
-
-    # Persist the assistant response
     memory.add("assistant", final)
 
     return ChatResponse(

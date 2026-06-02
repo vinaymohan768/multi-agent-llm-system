@@ -3,15 +3,10 @@ memory/store.py
 
 PostgreSQL-backed conversation memory with rolling summarization.
 
-Strategy:
-- Full message history stored in `conversation_memory` table
-- When history exceeds SUMMARY_THRESHOLD messages, an LLM-generated summary
-  replaces the oldest messages in the context window
-- The summary is stored in `memory_summaries` and prepended to the context
-  as a system message on each turn
-
-This keeps context windows bounded while preserving semantic continuity
-across long conversations — a common pattern in production agentic systems.
+Every message is stored in full. Once the history crosses SUMMARY_THRESHOLD,
+the older messages get summarized by the LLM and that summary is stored in
+memory_summaries. On the next turn, the summary is prepended as a system
+message so the agent still has context without blowing up the token count.
 """
 
 import os
@@ -45,10 +40,7 @@ class Message:
 
 
 class ConversationMemory:
-    """
-    Per-session conversation memory backed by PostgreSQL.
-    Thread-safe for single-writer scenarios (one session = one conversation thread).
-    """
+    """Per-session conversation memory backed by PostgreSQL."""
 
     def __init__(self, session_id: str, openai_client: OpenAI, db_conn=None):
         self.session_id = session_id
@@ -83,13 +75,7 @@ class ConversationMemory:
     # ── Read ──────────────────────────────────────────────────────────────────
 
     def get_context(self) -> list[dict]:
-        """
-        Build the message list to pass to the LLM:
-          1. System message containing the rolling summary (if one exists)
-          2. The most recent RECENT_MESSAGE_COUNT messages verbatim
-
-        This bounds context size while keeping semantic continuity.
-        """
+        """Return [optional summary system message] + last N messages verbatim."""
         messages = []
 
         summary = self._get_summary()
@@ -119,7 +105,7 @@ class ConversationMemory:
             return [dict(r) for r in cur.fetchall()]
 
     def clear(self):
-        """Wipe all memory for this session (used in tests or explicit resets)."""
+        """Delete all messages and summaries for this session."""
         with self.conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM conversation_memory WHERE session_id = %s",
@@ -167,10 +153,7 @@ class ConversationMemory:
             return row[0] if row else None
 
     def _summarize(self):
-        """
-        Summarize messages older than RECENT_MESSAGE_COUNT using the LLM.
-        Stores/updates the summary in memory_summaries.
-        """
+        """Summarize old messages and upsert the result into memory_summaries."""
         with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """

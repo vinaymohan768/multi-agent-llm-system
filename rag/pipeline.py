@@ -1,17 +1,11 @@
 """
 rag/pipeline.py
 
-Full RAG pipeline:
-  1. Ingest — chunk documents, embed with OpenAI, store in pgvector
-  2. Retrieve — cosine similarity search with IVFFlat index
-  3. Rerank  — cross-encoder style reranking using LLM scoring
+RAG pipeline: ingest → retrieve → rerank.
 
-Design notes:
-- Chunking uses a sentence-aware splitter (respects paragraph/sentence boundaries)
-  rather than naive fixed-size slicing to preserve semantic coherence.
-- Embeddings are batched (up to 100 at a time) to stay within OpenAI rate limits.
-- Reranking runs a lightweight relevance score over top-K candidates to surface
-  the most useful chunks before passing context to the LLM.
+Chunking splits on sentence boundaries rather than fixed token counts so chunks
+stay semantically coherent. Embeddings are batched at 100 per call. Reranking
+uses a cheap LLM score pass over the top-K candidates before returning context.
 """
 
 import os
@@ -52,14 +46,7 @@ def _tokenize(text: str, enc) -> list[int]:
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
-    """
-    Sentence-aware chunking:
-      1. Split on paragraph boundaries first
-      2. Further split long paragraphs at sentence boundaries
-      3. Pack sentences into token-bounded chunks with overlap
-
-    This produces more semantically coherent chunks than naive fixed-size slicing.
-    """
+    """Split text into token-bounded chunks that respect sentence boundaries."""
     enc = tiktoken.get_encoding("cl100k_base")
 
     # Split into sentences (handles common abbreviations)
@@ -96,7 +83,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
 def embed_batch(texts: list[str], client: OpenAI) -> list[list[float]]:
-    """Embed up to 100 texts in one API call. Returns list of embedding vectors."""
+    """Embed texts in batches of 100. Returns vectors in the same order as input."""
     BATCH_SIZE = 100
     all_embeddings = []
 
@@ -198,13 +185,7 @@ class RAGPipeline:
         return results
 
     def rerank(self, query: str, candidates: list[dict], top_k: int = RERANK_K) -> list[dict]:
-        """
-        LLM-based reranking: ask the model to score each candidate's relevance
-        to the query on a 0–10 scale, then sort and return top_k.
-
-        This is a lightweight alternative to a dedicated cross-encoder model.
-        In production, replace with Cohere Rerank or a local cross-encoder.
-        """
+        """Score each candidate 0–10 for relevance to the query, return top_k."""
         if not candidates:
             return []
 
